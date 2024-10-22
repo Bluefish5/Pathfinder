@@ -1,0 +1,12 @@
+../Core/Src/main.c:63:6:emergencyStop	8	static
+../Core/Src/main.c:71:6:moveForward	8	static
+../Core/Src/main.c:79:6:moveReverse	8	static
+../Core/Src/main.c:87:6:turnRight	8	static
+../Core/Src/main.c:94:6:turnLeft	8	static
+../Core/Src/main.c:101:6:getSensorValues	8	static
+../Core/Src/main.c:124:5:main	8	static
+../Core/Src/main.c:176:6:SystemClock_Config	96	static
+../Core/Src/main.c:226:13:MX_USART2_UART_Init	8	static
+../Core/Src/main.c:261:13:MX_GPIO_Init	48	static
+../Core/Src/main.c:304:6:HAL_UART_RxCpltCallback	16	static
+../Core/Src/main.c:326:6:Error_Handler	4	static,ignoring_inline_asm
