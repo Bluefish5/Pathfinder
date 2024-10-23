@@ -1,10 +1,10 @@
 # pathfinder
 
-folder structure:
-
-|-> 📂software // code that is running on computers.
-|
-|-> 📂firmware // code that is running on electornic.
+folder structure:<br/>
+<br/>
+|-> 📂software // code that is running on computers.<br/>
+|<br/>
+|-> 📂firmware // code that is running on electornic.<br/>
 
 # Communication between stm32 <--> raspbery:
 ```
@@ -20,5 +20,5 @@ enum Communication{
 
 };
 ```
-Example:
+Example:<br/>
 if u want to use function moveForward() u need to send 1 to serial port of STM32.
