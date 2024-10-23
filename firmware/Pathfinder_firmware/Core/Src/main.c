@@ -47,19 +47,34 @@ UART_HandleTypeDef huart2;
 uint8_t sign;
 uint8_t receivedSign;
 uint8_t messageCursor = 0;
-char messageReceived[250];
+uint8_t frameCursor = 0;
+char messageReceived[50];
+uint64_t frameReceived[10];
 
 enum Communication{
 	EMERGENCY_STOP,
 	MOVE_FORWARD,
-	MOVE_FORWARD_CURVE,
 	MOVE_REVERSE,
-	MOVE_REVERSE_CURVE,
 	TURN_LEFT,
 	TURN_RIGHT,
+	SET_MOVMENT_SPEED,
 	GET_SENSOR_VALUES
 
 };
+void setMovmentSpeed(int motorA,int motorB) {
+	if(motorA<0)HAL_GPIO_WritePin(MOTOR_A_DIRECTION_GPIO_Port,MOTOR_A_DIRECTION_Pin , GPIO_PIN_RESET);
+	else HAL_GPIO_WritePin(MOTOR_A_DIRECTION_GPIO_Port,MOTOR_A_DIRECTION_Pin , GPIO_PIN_SET);
+
+	if(motorB<0)HAL_GPIO_WritePin(MOTOR_B_DIRECTION_GPIO_Port,MOTOR_B_DIRECTION_Pin , GPIO_PIN_RESET);
+	else HAL_GPIO_WritePin(MOTOR_B_DIRECTION_GPIO_Port,MOTOR_B_DIRECTION_Pin , GPIO_PIN_SET);
+
+	//Zamienic to na PWN potem
+	if(motorA!=0)HAL_GPIO_WritePin(MOTOR_A_SPEED_GPIO_Port,MOTOR_A_SPEED_Pin , GPIO_PIN_SET);
+	else HAL_GPIO_WritePin(MOTOR_A_SPEED_GPIO_Port,MOTOR_A_SPEED_Pin , GPIO_PIN_RESET);
+	if(motorB!=0)HAL_GPIO_WritePin(MOTOR_B_SPEED_GPIO_Port,MOTOR_B_SPEED_Pin , GPIO_PIN_SET);
+	else HAL_GPIO_WritePin(MOTOR_B_SPEED_GPIO_Port,MOTOR_B_SPEED_Pin , GPIO_PIN_RESET);
+
+}
 void emergencyStop() {
 	HAL_GPIO_WritePin(MOTOR_A_DIRECTION_GPIO_Port,MOTOR_A_DIRECTION_Pin , GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(MOTOR_B_DIRECTION_GPIO_Port,MOTOR_B_DIRECTION_Pin , GPIO_PIN_RESET);
@@ -304,16 +319,25 @@ static void MX_GPIO_Init(void)
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	if(huart -> Instance == USART2){
 		if(receivedSign == '\n'){
-			if(strcmp(atoi(messageReceived), EMERGENCY_STOP ) == 0) emergencyStop();
-			else if(strcmp(atoi(messageReceived), (int)MOVE_FORWARD) == 0)moveForward();
-			else if(strcmp(atoi(messageReceived), MOVE_REVERSE) == 0)moveReverse();
-			else if(strcmp(atoi(messageReceived), TURN_LEFT) == 0)turnLeft();
-			else if(strcmp(atoi(messageReceived), TURN_RIGHT) == 0)turnRight();
-			else if(strcmp(atoi(messageReceived), GET_SENSOR_VALUES) == 0)getSensorValues();
-			memset(messageReceived, 0, 250);
+			frameReceived[frameCursor] = atoi(messageReceived);
+			if(strcmp(frameReceived[0], EMERGENCY_STOP ) == 0) emergencyStop();
+			else if(strcmp(frameReceived[0], MOVE_FORWARD) == 0)moveForward();
+			else if(strcmp(frameReceived[0], MOVE_REVERSE) == 0)moveReverse();
+			else if(strcmp(frameReceived[0], TURN_LEFT) == 0)turnLeft();
+			else if(strcmp(frameReceived[0], TURN_RIGHT) == 0)turnRight();
+			else if(strcmp(frameReceived[0], SET_MOVMENT_SPEED) == 0)setMovmentSpeed(frameReceived[1], frameReceived[2]);
+			else if(strcmp(frameReceived[0], GET_SENSOR_VALUES) == 0)getSensorValues();
+			memset(messageReceived, 0, 50);
+			memset(frameReceived, 0, 10);
 			messageCursor = 0;
+			frameCursor = 0;
 		}
-	else messageReceived[messageCursor++] = (char)receivedSign;
+		else if(receivedSign == ' '){
+			frameReceived[frameCursor++] = atoi(messageReceived);
+			messageCursor = 0;
+			memset(messageReceived, 0, 50);
+		}
+		else messageReceived[messageCursor++] = (char)receivedSign;
 	HAL_UART_Receive_IT(&huart2, &receivedSign, 1);
 	}
 }
