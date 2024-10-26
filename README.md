@@ -16,7 +16,7 @@ Folder structure:<br/>
 | **TURN_LEFT** | 3 | `void turnLeft()` | motor A spining forwad and motor B spinnig revese with 100% speed |
 | **TURN_RIGHT** | 4 | `void turnRight()` | motor A spining revese and motor B spinnig forwad with 100% speed |
 | **SET_MOVMENT_SPEED** | 5 | `setMovmentSpeed(int motorA,int motorB)` | set speed of 2 motor individualy can accepting paramaeter (-100 to 100) |
-| **GET_SENSOR_VALUES** | 6 | `void getSensorValues()` | check actual state of sensor and giving to serial port as binary |
+| **GET_SENSOR_VALUES** | 7 | `void getSensorValues()` | check actual state of sensor and giving to serial port as binary ex. 10000 or 11111 |
 
 
 Example:<br/>

@@ -53,6 +53,8 @@ uint8_t messageCursor = 0;
 uint8_t frameCursor = 0;
 char messageReceived[50];
 uint64_t frameReceived[10];
+char sensorsValues[5];
+
 
 enum Communication{
 	EMERGENCY_STOP,
@@ -61,7 +63,7 @@ enum Communication{
 	TURN_LEFT,
 	TURN_RIGHT,
 	SET_MOVMENT_SPEED,
-	GET_SENSOR_VALUES
+	GET_SENSOR_VALUES = 7
 
 };
 void setMovmentSpeed(int motorA,int motorB) {
@@ -116,9 +118,16 @@ void turnLeft() {
 	__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_3,100);
 	__HAL_TIM_SET_COMPARE(&htim3,TIM_CHANNEL_1,100);
 }
-void getSensorValues() {
-	HAL_UART_Transmit_IT(&huart2, '?', 1);
+void getSensorValues(){
+	sensorsValues[0] = HAL_GPIO_ReadPin(SENSOR_A0_GPIO_Port, SENSOR_A0_Pin) + '0';
+	sensorsValues[1] = HAL_GPIO_ReadPin(SENSOR_A1_GPIO_Port, SENSOR_A1_Pin) + '0';
+	sensorsValues[2] = HAL_GPIO_ReadPin(SENSOR_A2_GPIO_Port, SENSOR_A2_Pin) + '0';
+	sensorsValues[3] = HAL_GPIO_ReadPin(SENSOR_A3_GPIO_Port, SENSOR_A3_Pin) + '0';
+	sensorsValues[4] = HAL_GPIO_ReadPin(SENSOR_A4_GPIO_Port, SENSOR_A4_Pin) + '0';
+	HAL_UART_Transmit_IT(&huart2, sensorsValues , 5);
+
 }
+
 
 /* USER CODE END PV */
 
@@ -179,13 +188,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-//	HAL_GPIO_WritePin(MOTOR_A_SPEED_GPIO_Port,MOTOR_A_SPEED_Pin , GPIO_PIN_RESET);
-//	HAL_GPIO_WritePin(MOTOR_B_SPEED_GPIO_Port,MOTOR_B_SPEED_Pin , GPIO_PIN_RESET);
-//	HAL_Delay(1000);
-//
-//	HAL_GPIO_WritePin(MOTOR_A_SPEED_GPIO_Port,MOTOR_A_SPEED_Pin , GPIO_PIN_SET);
-//	HAL_GPIO_WritePin(MOTOR_B_SPEED_GPIO_Port,MOTOR_B_SPEED_Pin , GPIO_PIN_SET);
-//	HAL_Delay(1000);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -424,12 +426,30 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : SENSOR_A4_Pin */
+  GPIO_InitStruct.Pin = SENSOR_A4_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(SENSOR_A4_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : SENSOR_A0_Pin SENSOR_A1_Pin SENSOR_A2_Pin */
+  GPIO_InitStruct.Pin = SENSOR_A0_Pin|SENSOR_A1_Pin|SENSOR_A2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   /*Configure GPIO pins : LD2_Pin MOTOR_B_DIRECTION_Pin */
   GPIO_InitStruct.Pin = LD2_Pin|MOTOR_B_DIRECTION_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : SENSOR_A3_Pin */
+  GPIO_InitStruct.Pin = SENSOR_A3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(SENSOR_A3_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : MOTOR_A_DIRECTION_Pin */
   GPIO_InitStruct.Pin = MOTOR_A_DIRECTION_Pin;
