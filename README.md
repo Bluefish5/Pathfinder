@@ -1,11 +1,3 @@
-# Pathfinder
-
-Folder structure:<br/>
-<br/>
-|-> 📂software // code that is running on computers.<br/>
-|<br/>
-|-> 📂firmware // code that is running on electornic.<br/>
-<br/><br/>
 # Communication between STM32 <--> Raspbery:
 
 | Enum | Value | function | description |
