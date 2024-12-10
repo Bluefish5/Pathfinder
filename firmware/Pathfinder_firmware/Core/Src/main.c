@@ -67,17 +67,41 @@ enum Communication{
 
 };
 void setMovmentSpeed(int motorA,int motorB) {
-	if(motorA<0)HAL_GPIO_WritePin(MOTOR_A_DIRECTION_GPIO_Port,MOTOR_A_DIRECTION_Pin , GPIO_PIN_RESET);
-	else HAL_GPIO_WritePin(MOTOR_A_DIRECTION_GPIO_Port,MOTOR_A_DIRECTION_Pin , GPIO_PIN_SET);
+	uint8_t motorAOutput = motorA;
+	uint8_t motorBOutput = motorB;
+	if(motorA<=100)HAL_GPIO_WritePin(MOTOR_A_DIRECTION_GPIO_Port,MOTOR_A_DIRECTION_Pin , GPIO_PIN_RESET);
+	else
+	{
+		HAL_GPIO_WritePin(MOTOR_A_DIRECTION_GPIO_Port,MOTOR_A_DIRECTION_Pin , GPIO_PIN_SET);
+		motorAOutput = motorAOutput - 100;
+	}
 
-	if(motorB<0)HAL_GPIO_WritePin(MOTOR_B_DIRECTION_GPIO_Port,MOTOR_B_DIRECTION_Pin , GPIO_PIN_RESET);
-	else HAL_GPIO_WritePin(MOTOR_B_DIRECTION_GPIO_Port,MOTOR_B_DIRECTION_Pin , GPIO_PIN_SET);
+	if(motorB<=100)HAL_GPIO_WritePin(MOTOR_B_DIRECTION_GPIO_Port,MOTOR_B_DIRECTION_Pin , GPIO_PIN_RESET);
+	else
+	{
+		HAL_GPIO_WritePin(MOTOR_B_DIRECTION_GPIO_Port,MOTOR_B_DIRECTION_Pin , GPIO_PIN_SET);
+		motorBOutput = motorBOutput - 100;
+	}
 
-	if(motorA!=0)__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_3,motorA);
-	else __HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_3,0);;
+	if(motorA!=0){
+			__HAL_TIM_SET_COMPARE(&htim3,TIM_CHANNEL_1,motorAOutput);
+	}
+	else
+	{
+		__HAL_TIM_SET_COMPARE(&htim3,TIM_CHANNEL_1,0);
+	}
 
-	if(motorB!=0)__HAL_TIM_SET_COMPARE(&htim3,TIM_CHANNEL_1,motorB);
-	else __HAL_TIM_SET_COMPARE(&htim3,TIM_CHANNEL_1,0);
+	if(motorB!=0){
+		__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_3,motorBOutput);
+	}
+	else
+	{
+		__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_3,0);
+	}
+
+
+
+
 }
 void emergencyStop() {
 	HAL_GPIO_WritePin(MOTOR_A_DIRECTION_GPIO_Port,MOTOR_A_DIRECTION_Pin , GPIO_PIN_RESET);
