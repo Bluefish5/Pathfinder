@@ -91,6 +91,8 @@ void Error_Handler(void);
 #define MOTOR_B_SPEEDB4_GPIO_Port GPIOB
 #define MOTOR_A_DIRECTION_Pin GPIO_PIN_5
 #define MOTOR_A_DIRECTION_GPIO_Port GPIOB
+#define LED_PWM_Pin GPIO_PIN_6
+#define LED_PWM_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

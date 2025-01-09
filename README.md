@@ -9,7 +9,7 @@
 | **TURN_RIGHT** | 4 | `void turnRight()` | motor A spining revese and motor B spinnig forwad with 100% speed |
 | **SET_MOVMENT_SPEED** | 5 | `setMovmentSpeed(int motorA,int motorB)` | set speed of 2 motor individualy can accepting paramaeter (-100 to 100) |
 | **GET_SENSOR_VALUES** | 7 | `void getSensorValues()` | check actual state of sensor and giving to serial port as binary ex. 10000 or 11111 |
-
+| **SET_LED_BRIGHTNESS** | 8 | `void setLedBrightness` | seting brightness of led |
 
 Example:<br/>
 if u want to use function setMovmentSpeed() u need to send "5 -10 10\n" to serial port of STM32.
