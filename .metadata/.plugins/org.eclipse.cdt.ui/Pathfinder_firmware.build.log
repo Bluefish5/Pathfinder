@@ -1,0 +1,10 @@
+04:07:15 **** Incremental Build of configuration Debug for project Pathfinder_firmware ****
+make -j16 all 
+arm-none-eabi-size  Pathfinder_firmware.elf 
+   text	   data	    bss	    dec	    hex	filename
+  52108	    468	   2632	  55208	   d7a8	Pathfinder_firmware.elf
+Finished building: default.size.stdout
+ 
+
+04:07:16 Build Finished. 0 errors, 0 warnings. (took 264ms)
+
