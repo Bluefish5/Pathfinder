@@ -23,6 +23,10 @@
 /* USER CODE BEGIN Includes */
 #include <stdlib.h>
 #include <string.h>
+#include "robot.pb.h"
+#include "pb_encode.h"
+#include <math.h>
+#include "cJSON.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -32,7 +36,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define AS5600_I2C_ADDR (0x36 << 1)
+#define WHEEL_RADIUS  0.03  // 3 cm
+#define WHEEL_BASE    0.175  // 15 cm
+#define TICKS_PER_REV 4096  // AS5600 resolution
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -43,6 +50,9 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 
+I2C_HandleTypeDef hi2c1;
+I2C_HandleTypeDef hi2c3;
+
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
@@ -50,6 +60,14 @@ TIM_HandleTypeDef htim4;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+uint8_t low_bytes_angle_data = 0;
+uint8_t high_bytes_angle_data = 0;
+volatile uint16_t raw_angle;
+
+uint8_t low_bytes_angle_data_2 = 0;
+uint8_t high_bytes_angle_data_2 = 0;
+volatile uint16_t raw_angle_2;
+
 uint8_t sign;
 uint8_t receivedSign;
 uint8_t messageCursor = 0;
@@ -59,6 +77,9 @@ uint64_t frameReceived[10];
 float sensorsValues[5];
 char msg[100];
 
+float x_pos = 0.0, y_pos = 0.0, theta = 0.0;
+uint16_t prev_angle_L = 0, prev_angle_R = 0;
+
 enum Communication{
 	EMERGENCY_STOP,
 	MOVE_FORWARD,
@@ -66,10 +87,22 @@ enum Communication{
 	TURN_LEFT,
 	TURN_RIGHT,
 	SET_MOVMENT_SPEED,
-	GET_SENSOR_VALUES = 7,
+	GET_ROBOT_DATA = 7,
 	SET_LED_BRIGHTNESS
 
 };
+
+//typedef struct {
+//    int sensorValue1;
+//    int sensorValue2;
+//    int sensorValue3;
+//    int sensorValue4;
+//    int sensorValue5;
+//    float xPos;
+//    float yPos;
+//    float theta;
+//} RobotData;
+
 void setMovmentSpeed(int motorA,int motorB) {
 	uint8_t motorAOutput = motorA;
 	uint8_t motorBOutput = motorB;
@@ -146,35 +179,131 @@ void turnLeft() {
 	__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_3,100);
 	__HAL_TIM_SET_COMPARE(&htim3,TIM_CHANNEL_1,100);
 }
+void getEncoderValue(){
+	HAL_I2C_Mem_Read(&hi2c3, AS5600_I2C_ADDR, 0x0D, 1, &low_bytes_angle_data, sizeof(low_bytes_angle_data), HAL_MAX_DELAY);
+	HAL_I2C_Mem_Read(&hi2c3, AS5600_I2C_ADDR, 0x0C, 1, &high_bytes_angle_data, sizeof(high_bytes_angle_data), HAL_MAX_DELAY);
+	raw_angle = ((high_bytes_angle_data<< 8) | low_bytes_angle_data) & 0x0FFF;
+	HAL_I2C_Mem_Read(&hi2c1, AS5600_I2C_ADDR, 0x0D, 1, &low_bytes_angle_data_2, sizeof(low_bytes_angle_data_2), HAL_MAX_DELAY);
+	HAL_I2C_Mem_Read(&hi2c1, AS5600_I2C_ADDR, 0x0C, 1, &high_bytes_angle_data_2, sizeof(high_bytes_angle_data_2), HAL_MAX_DELAY);
+	raw_angle_2 = ((high_bytes_angle_data_2<< 8) | low_bytes_angle_data_2) & 0x0FFF;
+}
+
 void getSensorValues(){
 	HAL_ADC_Start(&hadc1);
-
 	HAL_ADC_PollForConversion(&hadc1, 100);
 	sensorsValues[0] = HAL_ADC_GetValue(&hadc1);
-
 	HAL_ADC_PollForConversion(&hadc1, 100);
 	sensorsValues[1] = HAL_ADC_GetValue(&hadc1);
-
 	HAL_ADC_PollForConversion(&hadc1, 100);
 	sensorsValues[2] = HAL_ADC_GetValue(&hadc1);
-
 	HAL_ADC_PollForConversion(&hadc1, 100);
 	sensorsValues[3] = HAL_ADC_GetValue(&hadc1);
-
 	HAL_ADC_PollForConversion(&hadc1, 100);
 	sensorsValues[4] = HAL_ADC_GetValue(&hadc1);
-
-
-
-	sprintf(msg, "%f,%f,%f,%f,%f\r\n",sensorsValues[0], sensorsValues[1], sensorsValues[2], sensorsValues[3], sensorsValues[4]);
-	HAL_UART_Transmit_IT(&huart2, (uint8_t*)msg , strlen(msg));
-
-
+//	sprintf(msg, "%f,%f,%f,%f,%f\r\n",sensorsValues[0], sensorsValues[1], sensorsValues[2], sensorsValues[3], sensorsValues[4]);
+//	HAL_UART_Transmit_IT(&huart2, (uint8_t*)msg , strlen(msg));
 
 }
 void setLedBrightness(int brightness) {
 	__HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_1,brightness);
 }
+
+float computeDeltaAngle(uint16_t new_angle, uint16_t prev_angle) {
+    int16_t delta = new_angle - prev_angle;
+
+    // Handle encoder overflow (angle wrapping)
+    if (delta > (TICKS_PER_REV / 2)) {
+        delta -= TICKS_PER_REV;  // Counterclockwise overflow
+    } else if (delta < -(TICKS_PER_REV / 2)) {
+        delta += TICKS_PER_REV;  // Clockwise overflow
+    }
+
+    // Convert to radians
+    return (delta * 2.0f * M_PI) / TICKS_PER_REV;
+}
+
+void updateRobotPosition() {
+    // Read new encoder values
+    getEncoderValue();
+
+    // Compute angle changes
+    float delta_angle_L = computeDeltaAngle(raw_angle, prev_angle_L);
+    float delta_angle_R = computeDeltaAngle(raw_angle_2, prev_angle_R);
+
+    // Convert to linear displacement
+    float d_L = delta_angle_L * WHEEL_RADIUS;
+    float d_R = delta_angle_R * WHEEL_RADIUS;
+    float d_C = (d_L + d_R) / 2.0;  // Center displacement
+    float d_theta = (d_R - d_L) / WHEEL_BASE;  // Change in orientation
+
+    // Update position
+    x_pos += d_C * cos(theta);
+    y_pos += d_C * sin(theta);
+    theta += d_theta;
+
+    // Keep theta in range [-π, π]
+    if (theta > M_PI) {
+        theta -= 2.0 * M_PI;
+    } else if (theta < -M_PI) {
+        theta += 2.0 * M_PI;
+    }
+
+    // Store previous angles
+    prev_angle_L = raw_angle;
+    prev_angle_R = raw_angle_2;
+}
+
+void sendRobotData() {
+	cJSON *jsonObj = cJSON_CreateObject();
+
+	cJSON_AddNumberToObject(jsonObj, "sensorValue1", sensorsValues[0]);
+	cJSON_AddNumberToObject(jsonObj, "sensorValue2", sensorsValues[1]);
+	cJSON_AddNumberToObject(jsonObj, "sensorValue3", sensorsValues[2]);
+	cJSON_AddNumberToObject(jsonObj, "sensorValue4", sensorsValues[3]);
+	cJSON_AddNumberToObject(jsonObj, "sensorValue5", sensorsValues[4]);
+	cJSON_AddNumberToObject(jsonObj, "xPos", x_pos);
+	cJSON_AddNumberToObject(jsonObj, "yPos", y_pos);
+	cJSON_AddNumberToObject(jsonObj, "theta", theta);
+	cJSON_AddNumberToObject(jsonObj, "rawAngle1", raw_angle);
+	cJSON_AddNumberToObject(jsonObj, "rawAngle2", raw_angle_2);
+
+	    // Convert JSON object to string
+	char *jsonString = cJSON_PrintUnformatted(jsonObj);
+
+	// Send JSON string via UART (or any other communication interface)
+	HAL_UART_Transmit_IT(&huart2, (uint8_t*)jsonString, strlen(jsonString));
+
+	// Free the JSON object after use
+	cJSON_Delete(jsonObj);
+}
+
+//void sendRobotData2() {
+//    uint8_t buffer[128];  // Increased buffer size for more data
+//    pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+//
+//    // Fill Protobuf message
+//    RobotData pos = {
+//        .sensor_value_1 = sensorsValues[0],
+//        .sensor_value_2 = sensorsValues[1],
+//        .sensor_value_3 = sensorsValues[2],
+//        .sensor_value_4 = sensorsValues[3],
+//        .sensor_value_5 = sensorsValues[4],
+//        .raw_angle_1 = raw_angle,  // Read from AS5600
+//        .raw_angle_2 = raw_angle_2,
+//        .x_pos = x_pos,  // Computed position
+//        .y_pos = y_pos,
+//        .theta = theta
+//    };
+//
+//    // Serialize the data
+//    if (!pb_encode(&stream, RobotData_fields, &pos)) {
+//        printf("Encoding failed!\n");
+//        return;
+//    }
+//
+//    // Send serialized data over UART
+//    HAL_UART_Transmit_IT(&huart2, buffer, stream.bytes_written);
+//}
 
 /* USER CODE END PV */
 
@@ -186,6 +315,8 @@ static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_ADC1_Init(void);
+static void MX_I2C1_Init(void);
+static void MX_I2C3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -229,6 +360,8 @@ int main(void)
   MX_TIM3_Init();
   MX_TIM4_Init();
   MX_ADC1_Init();
+  MX_I2C1_Init();
+  MX_I2C3_Init();
   /* USER CODE BEGIN 2 */
   HAL_UART_Receive_IT(&huart2, &receivedSign, 1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
@@ -241,6 +374,9 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  updateRobotPosition();
+	  getSensorValues();
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -348,7 +484,7 @@ static void MX_ADC1_Init(void)
 
   /** Configure Regular Channel
   */
-  sConfig.Channel = ADC_CHANNEL_2;
+  sConfig.Channel = ADC_CHANNEL_4;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SamplingTime = ADC_SAMPLETIME_640CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
@@ -397,6 +533,102 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.Timing = 0x10D19CE4;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Analogue filter
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Digital filter
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
+  * @brief I2C3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C3_Init(void)
+{
+
+  /* USER CODE BEGIN I2C3_Init 0 */
+
+  /* USER CODE END I2C3_Init 0 */
+
+  /* USER CODE BEGIN I2C3_Init 1 */
+
+  /* USER CODE END I2C3_Init 1 */
+  hi2c3.Instance = I2C3;
+  hi2c3.Init.Timing = 0x10D19CE4;
+  hi2c3.Init.OwnAddress1 = 0;
+  hi2c3.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c3.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c3.Init.OwnAddress2 = 0;
+  hi2c3.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c3.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c3.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Analogue filter
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c3, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Digital filter
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c3, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C3_Init 2 */
+
+  /* USER CODE END I2C3_Init 2 */
 
 }
 
@@ -670,8 +902,8 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 			else if(strcmp(frameReceived[0], TURN_LEFT) == 0)turnLeft();
 			else if(strcmp(frameReceived[0], TURN_RIGHT) == 0)turnRight();
 			else if(strcmp(frameReceived[0], SET_MOVMENT_SPEED) == 0)setMovmentSpeed(frameReceived[1], frameReceived[2]);
-			else if(strcmp(frameReceived[0], GET_SENSOR_VALUES) == 0)getSensorValues();
 			else if(strcmp(frameReceived[0], SET_LED_BRIGHTNESS) == 0)setLedBrightness(frameReceived[1]);
+			else if(strcmp(frameReceived[0], GET_ROBOT_DATA) == 0){sendRobotData();}
 			memset(messageReceived, 0, 50);
 			memset(frameReceived, 0, 10);
 			messageCursor = 0;
