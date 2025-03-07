@@ -36,10 +36,15 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define MPU6050_ADDR (0x68 << 1)
 #define AS5600_I2C_ADDR (0x36 << 1)
 #define WHEEL_RADIUS  0.03  // 3 cm
 #define WHEEL_BASE    0.175  // 15 cm
 #define TICKS_PER_REV 4096  // AS5600 resolution
+#define ACCEL_SCALE 16384.0 // 16384 LSB/g for ±2g
+#define GYRO_SCALE  131.0   // 131 LSB/(°/s) for ±250°/s
+#define TEMP_SCALE  340.0
+#define TEMP_OFFSET 36.53
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -51,6 +56,7 @@
 ADC_HandleTypeDef hadc1;
 
 I2C_HandleTypeDef hi2c1;
+I2C_HandleTypeDef hi2c2;
 I2C_HandleTypeDef hi2c3;
 
 TIM_HandleTypeDef htim2;
@@ -80,6 +86,9 @@ char msg[100];
 float x_pos = 0.0, y_pos = 0.0, theta = 0.0;
 uint16_t prev_angle_L = 0, prev_angle_R = 0;
 
+int16_t Accel[3], Gyro[3], Temp;
+float Accel_f[3], Gyro_f[3], Temp_f;
+
 enum Communication{
 	EMERGENCY_STOP,
 	MOVE_FORWARD,
@@ -91,6 +100,8 @@ enum Communication{
 	SET_LED_BRIGHTNESS
 
 };
+
+
 
 //typedef struct {
 //    int sensorValue1;
@@ -188,6 +199,50 @@ void getEncoderValue(){
 	raw_angle_2 = ((high_bytes_angle_data_2<< 8) | low_bytes_angle_data_2) & 0x0FFF;
 }
 
+
+void MPU6050_Init() {
+    uint8_t check, data;
+
+    // Check if MPU6050 is connected
+    HAL_I2C_Mem_Read(&hi2c2, MPU6050_ADDR, 0x75, 1, &check, 1, 1000);
+    if (check != 0x68) {
+        // MPU6050 not found, handle error
+        return;
+    }
+
+    // Wake up MPU6050 (Write 0 to Power Management Register)
+    data = 0x00;
+    HAL_I2C_Mem_Write(&hi2c2, MPU6050_ADDR, 0x6B, 1, &data, 1, 1000);
+
+    // Set accelerometer configuration (±2g)
+    data = 0x00;
+    HAL_I2C_Mem_Write(&hi2c2, MPU6050_ADDR, 0x1C, 1, &data, 1, 1000);
+
+    // Set gyroscope configuration (±250°/s)
+    data = 0x00;
+    HAL_I2C_Mem_Write(&hi2c2, MPU6050_ADDR, 0x1B, 1, &data, 1, 1000);
+}
+
+void MPU6050_Read_All(int16_t *Accel, int16_t *Gyro, int16_t *Temp) {
+    uint8_t data[14];
+
+    // Read 14 bytes from MPU6050 starting at ACCEL_XOUT_H
+    HAL_I2C_Mem_Read(&hi2c2, MPU6050_ADDR, 0x3B, 1, data, 14, 1000);
+
+    // Accelerometer values
+    Accel[0] = (int16_t)(data[0] << 8 | data[1]);  // X
+    Accel[1] = (int16_t)(data[2] << 8 | data[3]);  // Y
+    Accel[2] = (int16_t)(data[4] << 8 | data[5]);  // Z
+
+    // Temperature value
+    *Temp = (int16_t)(data[6] << 8 | data[7]);
+
+    // Gyroscope values
+    Gyro[0] = (int16_t)(data[8] << 8 | data[9]);   // X
+    Gyro[1] = (int16_t)(data[10] << 8 | data[11]); // Y
+    Gyro[2] = (int16_t)(data[12] << 8 | data[13]); // Z
+}
+
 void getSensorValues(){
 	HAL_ADC_Start(&hadc1);
 	HAL_ADC_PollForConversion(&hadc1, 100);
@@ -266,6 +321,17 @@ void sendRobotData() {
 	cJSON_AddNumberToObject(jsonObj, "theta", theta);
 	cJSON_AddNumberToObject(jsonObj, "rawAngle1", raw_angle);
 	cJSON_AddNumberToObject(jsonObj, "rawAngle2", raw_angle_2);
+	cJSON_AddNumberToObject(jsonObj, "xGyro", Gyro_f[0]);
+	cJSON_AddNumberToObject(jsonObj, "yGyro", Gyro_f[1]);
+	cJSON_AddNumberToObject(jsonObj, "zGyro", Gyro_f[2]);
+
+	cJSON_AddNumberToObject(jsonObj, "xAccel", Accel_f[0]);
+	cJSON_AddNumberToObject(jsonObj, "yAccel", Accel_f[1]);
+	cJSON_AddNumberToObject(jsonObj, "zAccel", Accel_f[2]);
+
+	cJSON_AddNumberToObject(jsonObj, "Temp", Temp_f);
+
+
 
 	    // Convert JSON object to string
 	char *jsonString = cJSON_PrintUnformatted(jsonObj);
@@ -275,6 +341,19 @@ void sendRobotData() {
 
 	// Free the JSON object after use
 	cJSON_Delete(jsonObj);
+}
+
+void Convert_To_Units(int16_t *Accel, int16_t *Gyro, int16_t Temp, float *Accel_f, float *Gyro_f, float *Temp_f) {
+    for (int i = 0; i < 3; i++) {
+        Accel_f[i] = Accel[i] / ACCEL_SCALE; // g
+        Gyro_f[i]  = Gyro[i]  / GYRO_SCALE;  // °/s
+    }
+    *Temp_f = (Temp / TEMP_SCALE) + TEMP_OFFSET; // °C
+}
+
+void Encoders_Init() {
+    prev_angle_L = raw_angle;
+    prev_angle_R = raw_angle_2;
 }
 
 //void sendRobotData2() {
@@ -317,6 +396,7 @@ static void MX_TIM4_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_I2C3_Init(void);
+static void MX_I2C2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -362,18 +442,26 @@ int main(void)
   MX_ADC1_Init();
   MX_I2C1_Init();
   MX_I2C3_Init();
+  MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
   HAL_UART_Receive_IT(&huart2, &receivedSign, 1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
   HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
+
+  MPU6050_Init();
+
+  Encoders_Init();
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  MPU6050_Read_All(Accel, Gyro, &Temp);
+	  Convert_To_Units(Accel, Gyro, Temp, Accel_f, Gyro_f, &Temp_f);
 	  updateRobotPosition();
 	  getSensorValues();
 
@@ -581,6 +669,54 @@ static void MX_I2C1_Init(void)
   /* USER CODE BEGIN I2C1_Init 2 */
 
   /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
+  * @brief I2C2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C2_Init(void)
+{
+
+  /* USER CODE BEGIN I2C2_Init 0 */
+
+  /* USER CODE END I2C2_Init 0 */
+
+  /* USER CODE BEGIN I2C2_Init 1 */
+
+  /* USER CODE END I2C2_Init 1 */
+  hi2c2.Instance = I2C2;
+  hi2c2.Init.Timing = 0x10D19CE4;
+  hi2c2.Init.OwnAddress1 = 0;
+  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c2.Init.OwnAddress2 = 0;
+  hi2c2.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Analogue filter
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c2, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Digital filter
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c2, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C2_Init 2 */
+
+  /* USER CODE END I2C2_Init 2 */
 
 }
 
