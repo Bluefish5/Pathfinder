@@ -337,10 +337,22 @@ void sendRobotData() {
 	char *jsonString = cJSON_PrintUnformatted(jsonObj);
 
 	// Send JSON string via UART (or any other communication interface)
-	HAL_UART_Transmit_IT(&huart2, (uint8_t*)jsonString, strlen(jsonString));
+	// Allocate new buffer: length of JSON + 1 for '\n' + 1 for '\0'
+	size_t len = strlen(jsonString);
+	char *jsonWithNewline = malloc(len + 2);  // +2 for '\n' and '\0'
+
+	if (jsonWithNewline != NULL) {
+	    memcpy(jsonWithNewline, jsonString, len);  // Copy original string
+	    jsonWithNewline[len] = '\n';               // Add newline
+	    jsonWithNewline[len + 1] = '\0';           // Null terminator
+
+	    HAL_UART_Transmit(&huart2, (uint8_t*)jsonWithNewline, len + 1, 100);  // len+1 includes \n
+	    free(jsonWithNewline);
+	}
 
 	// Free the JSON object after use
 	cJSON_Delete(jsonObj);
+	free(jsonString);
 }
 
 void Convert_To_Units(int16_t *Accel, int16_t *Gyro, int16_t Temp, float *Accel_f, float *Gyro_f, float *Temp_f) {
@@ -464,6 +476,8 @@ int main(void)
 	  Convert_To_Units(Accel, Gyro, Temp, Accel_f, Gyro_f, &Temp_f);
 	  updateRobotPosition();
 	  getSensorValues();
+	  sendRobotData();
+
 
     /* USER CODE END WHILE */
 
